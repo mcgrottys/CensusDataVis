@@ -1,0 +1,485 @@
+﻿<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+    .cities {
+        fill: green;
+    }
+
+    .states {
+        pointer-events: none;
+        fill: transparent;
+        fill-opacity: 1;
+        stroke: transparent;
+        stroke-linejoin: round;
+    }
+
+    .counties {
+        fill: grey;
+        stroke: transparent;
+        stroke-linejoin: round;
+    }
+
+    .state-boundary {
+        fill: none;
+    }
+
+    .states path:hover {
+        stroke: red;
+    }
+
+    .counties path:hover {
+        /*stroke: red;*/
+    }
+
+    #map {
+        width: 1000px;
+        height: 1000px;
+    }
+
+    div.tooltip {
+        position: absolute;
+        text-align: center;
+        width: auto;
+        height: auto;
+        padding: 2px;
+        font: 12px sans-serif;
+        background: white;
+        border: 0px;
+        border-radius: 8px;
+        pointer-events: none;
+    }
+    /*path:hover {
+      fill: red;
+    }*/
+
+    /*state-boundary:hover{
+        stroke: purple;
+    }*/
+</style>
+<body>
+    <script src="https://code.jquery.com/jquery-3.1.1.min.js"
+            integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8="
+            crossorigin="anonymous"></script>
+    <script src="//d3js.org/d3.v3.min.js"></script>
+    <script src="//d3js.org/topojson.v2.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+
+    <h1>American Community Survey 3 Year Data (2012-2013)</h1>
+    <select id="SelectSource"></select>
+    <h2 id="headertop"></h2>
+    <h3 id="headerbot"></h3>
+    <label>State Opacity</label>
+    <input type="range" name="bgopacity" id="bgopacity" value="100" min="0" max="100" step="1" onchange="rangevalue.value=value">
+    <output id="rangevalue">100</output>
+    <div id="visual">
+        <div id="charts" style="float:left; width:32%;height:700px;border:none">
+            <div id="StatesChart" style="height:49%;width:100%;border:none;overflow:scroll">states</div>
+            <div id="CountiesChart" style="height:49%;width:100%;border:none;overflow:scroll">counties</div>
+        </div>
+
+        <div id="map" style="float:right; width:67%;height:700px;border:none;overflow:scroll"></div>
+    </div>
+    <script>
+        $('#bgopacity').on('input', function (value) {
+            $('.states').css({
+                opacity: $(this).val() * '.01'
+            });
+        });
+
+        var dummyData = ['English', 'Spanish', 'French', 'Mandarin'];
+
+        $(document).ready(function () {
+            $.get("http://api.census.gov/data/2013/acs3/profile/variables", function (variables) {
+
+                var data = variables,
+                sourseOptions = "";
+
+                for (var i = 5; i < 100; i++) {
+                    sourseOptions += '<option data-myAttri="' + data[i][2] + '" value ="' + data[i][0] + '">' + data[i][1] + '</option>';
+                }
+                $("#SelectSource").append(sourseOptions);
+                $('select').on('change', function () {
+                    UpdateMap(this.value);
+                    console.log($('option:selected', this).attr("data-myAttri"));
+                    $("#headertop").html($('option:selected', this).attr("data-myAttri"));
+                    $("#headerbot").html($('option:selected', this).text());
+                })
+                UpdateMap("DP02_0001E");
+
+            });
+
+        });
+        var statebars;
+        var countybars;
+        function UpdateMap(VarCode) {
+
+            $("#map").empty();
+
+            var width = 1440,
+                height = 700;
+
+            var div = d3.select("#map")
+                        .append("div")
+                        .attr("class", "tooltip")
+                        .style("opacity", 0);
+
+            var projection = d3.geo.albersUsa()
+                .scale(1500)
+                .translate([width / 2, height / 2]);
+
+            var path = d3.geo.path()
+                .projection(projection);
+
+            var path2 = d3.geo.path();
+
+            var svg = d3.select("#map").append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+
+            d3.json("us.json", function (error, us) {
+                if (error) throw error;
+                //var somecounties = jQuery.extend({}, us);
+                //somecounties.objects.counties.geometries = jQuery.extend([], somecounties.objects.counties.geometries.map(function (a) { if (a.id < 10000) return jQuery.extend({}, a); }));
+
+                var IDs = us.objects.counties.geometries.map(function (a) { return parseInt(a.id); }).sort();
+                // console.log(IDs);
+
+
+                var states;
+                var CountiesCensus;
+                var CountyCensusURL;
+                var StateCensusURL;
+                if (typeof VarCode == 'undefined') {
+                    censusURL = "";
+                    StateCensusURL = "";
+                }
+                else {
+                    CountyCensusURL = "http://api.census.gov/data/2013/acs3/profile?get=NAME," + VarCode + "&for=county:*&key=8d15539ba9df2fee70731737ab6ca7b02436b4fa";
+                    StateCensusURL = "http://api.census.gov/data/2013/acs3/profile?get=NAME," + VarCode + "&for=state:*&key=8d15539ba9df2fee70731737ab6ca7b02436b4fa";
+                }
+                $.get(CountyCensusURL, function (CountiesCensus) {
+                    $.get(StateCensusURL, function (StateCensus) {
+                        //console.log(CountyCensusURL);
+                        //console.log(StateCensus);
+                        if (typeof VarCode != 'undefined') {
+                            ChartStates(StateCensus);
+                        }
+
+                        var max = d3.max(CountiesCensus, function (d) { return parseFloat(d[1]); });
+                        var min = d3.min(CountiesCensus, function (d) { return parseFloat(d[1]); });
+                        var StateMax = d3.max(CountiesCensus, function (d) { return parseFloat(d[1]); });
+                        var StateMin = d3.min(CountiesCensus, function (d) { return parseFloat(d[1]); });
+
+                        var fill = d3.scale.linear()
+                                    .domain([min, max])
+                                    .range(["#D3D3D3", "blue"]);
+
+                        var IDs = us.objects.states.geometries.map(function (a) { return parseInt(a.id); }).sort();
+
+                        var fill2 = d3.scale.linear()
+                              .domain([StateMin, StateMax])
+                              .range(["#D3D3D3", "blue"]);
+
+                        var counties = svg.append("g")
+                       .attr("class", "counties")
+                      .selectAll("path")
+                       .data(topojson.feature(us, us.objects.counties).features)
+                      .enter().append("path")
+                       .attr("d", path)
+                              .attr("id", function (d) { return d.id; })
+                       .style("fill", function (d) { var val = _.find(CountiesCensus, function (x) { return (((parseInt(x[2]) * 1000) + parseInt(x[3])) == parseInt(d.id)) }); if (val != undefined) { return fill(parseFloat(val[1])); } })
+                               .on("mouseover", function (d) {
+                                   var val2 = _.filter(CountiesCensus, function (x) { return (((parseInt(x[2]))) == Math.floor(parseInt(d.id) / 1000)) });
+                                   //console.log(val2);
+                                   ChartCounties(val2)
+                                   div.transition()
+                                      .duration(200)
+                                      .style("opacity", .9);
+                                   div.text(function () { var val = _.find(CountiesCensus, function (x) { return (((parseInt(x[2]) * 1000) + parseInt(x[3])) == parseInt(d.id)) }); if (val != undefined) { return CountiesCensus[0][0] + ": " + val[0] + " \n" + CountiesCensus[0][1] + ": " + val[1]; } })
+                                   .style("left", (d3.event.pageX) + "px")
+                                   .style("top", (d3.event.pageY - 28) + "px");
+                                   statebars.selectAll("rect").filter(function (z) { return (z[2] == Math.floor(d.id / 1000)); }).style("fill", "green");
+                                   countybars.selectAll("rect").filter(function (z) { return (((parseInt(z[2]) * 1000) + parseInt(z[3])) == parseInt(d.id)); }).style("fill", "green");
+                                   states.filter(function (x) { return (x.id == Math.floor(d.id / 1000)); })
+                                   .style("stroke", "red");
+                                   $(this).css("stroke", "red");
+                               })
+                           .on("mouseout", function (d) {
+                               statebars.selectAll("rect").filter(function (z) { return (z[2] == Math.floor(d.id / 1000)); }).style("fill", "steelblue");
+                               countybars.selectAll("rect").filter(function (z) { return (((parseInt(z[2]) * 1000) + parseInt(z[3])) == parseInt(d.id)); }).style("fill", "steelblue");
+                               div.transition()
+                                  .duration(500)
+                                  .style("opacity", 0);
+                               states.filter(function (x) { return (x.id == Math.floor(d.id / 1000)); })
+                                  .style("stroke", "transparent");
+                               $(this).css("stroke", "transparent");
+                           })
+                        .on("cityoverlap", function (d) {
+                            console.log("overlapped");
+                            div.transition()
+                               .duration(200)
+                               .style("opacity", .9);
+                            div.text(function () { var val = _.find(CountiesCensus, function (x) { return (((parseInt(x[2]) * 1000) + parseInt(x[3])) == parseInt(d.id)) }); if (val != undefined) { return CountiesCensus[0][0] + ": " + val[0] + " \n" + CountiesCensus[0][1] + ": " + val[1]; } })
+                            .style("left", (d3.event.pageX) + "px")
+                            .style("top", (d3.event.pageY - 28) + "px");
+                            states.filter(function (x) { return (x.id == Math.floor(d.id / 1000)); })
+                            .style("stroke", "red");
+                            $(this).css("stroke", "red");
+                        });
+
+                        states = svg.append("g")
+                            .attr("class", "states")
+                          .selectAll("path")
+                            .data(topojson.feature(us, us.objects.states).features)
+                          .enter().append("path")
+                            .attr("d", path)
+                        .style("fill", function (d) { var val = _.find(StateCensus, function (x) { return (parseInt(x[2]) == parseInt(d.id)) }); if (val != undefined) { return fill2(parseFloat(val[1])); } });
+                        //function (d) { var val = _.find(StateCensus, function (x) { return (parseInt(x[2]) == parseInt(d.id)) }); if (val != undefined) { console.log(val); return fill2(val[1]); } }
+
+                        d3.json("cities.json", function (data) {
+
+                            svg.selectAll("circle")
+                                .data(data)
+                                .enter()
+                                .append("circle").attr("class", "cities")
+                                .attr("cx", function (d) {
+                                    return projection([d.longitude, d.latitude])[0];
+                                })
+                                .attr("cy", function (d) {
+                                    return projection([d.longitude, d.latitude])[1];
+                                })
+                                .attr("r", function (d) {
+                                    return "3px";
+                                })
+                                    .style("opacity", 0.85)
+                                .on("mouseover", function (d) {
+
+                                    $(this).css('visibility', 'hidden');
+                                    var $under = $(document.elementFromPoint(event.clientX, event.clientY));
+                                    console.log($under);
+                                    var Underid = $under.attr("id");
+                                    $(this).css('fill', 'red');
+                                    $(this).css('visibility', 'visible');
+                                    div.transition()
+                                       .duration(200)
+                                       .style("opacity", .9);
+                                    var countyinfo;
+                                    var val = _.find(CountiesCensus, function (x) { return (((parseInt(x[2]) * 1000) + parseInt(x[3])) == parseInt(Underid)) });
+                                    if (val != undefined) { countyinfo = val[0] + "</br>" + CountiesCensus[0][1] + ": " + val[1]; };
+                                    div.html(d.city +", "+d.state + "<br>population: " + d.population + "<br>" + countyinfo);
+                                    statebars.selectAll("rect").filter(function (z) { return (z[2] == Math.floor(Underid / 1000)); }).style("fill", "green");
+                                    countybars.selectAll("rect").filter(function (z) { return (((parseInt(z[2]) * 1000) + parseInt(z[3])) == parseInt(Underid)); }).style("fill", "green");
+                                })
+
+                           .on("mouseout", function (d) {
+                               $(this).css('fill', 'green');
+                               div.transition()
+                                  .duration(500)
+                                  .style("opacity", 0);
+                               states.filter(function (x) { return (x.id == Math.floor(d.id / 1000)); })
+                                  .style("stroke", "transparent");
+                           });;
+
+                            // Modification of custom tooltip code provided by Malcolm Maclean, "D3 Tips and Tricks"
+                            // http://www.d3noob.org/2013/01/adding-tooltips-to-d3js-graph.html
+
+                        });
+                    });
+                });
+            });
+
+
+
+            d3.select(self.frameElement).style("height", height + "px");
+        }
+        //var csv is the CSV file with headers
+        function csvJSON(csv) {
+
+            var lines = csv.split("\n");
+
+            var result = [];
+
+            var headers = lines[0].split(",");
+
+            for (var i = 1; i < lines.length; i++) {
+
+                var obj = {};
+                var currentline = lines[i].split(",");
+
+                for (var j = 0; j < headers.length; j++) {
+                    obj[headers[j]] = currentline[j];
+                }
+
+                result.push(obj);
+
+            }
+
+            //return result; //JavaScript object
+            return JSON.stringify(result); //JSON
+        }
+        function ChartStates(statedata) {
+            $("#StatesChart").empty();
+            console.log(statedata);
+            console.log($("#StatesChart").width());
+
+            var margin = { top: 15, right: 15, bottom: 100, left: 100 },
+                width = $("#StatesChart").width() - margin.left - margin.right,
+                height = $("#StatesChart").height() - margin.top - margin.bottom;
+
+            // Parse the date / time
+
+
+            var x = d3.scale.ordinal().rangeRoundBands([0, width], .05);
+
+            var y = d3.scale.linear().range([height, 0]);
+
+            var xAxis = d3.svg.axis()
+                .scale(x)
+                .orient("bottom");
+
+            var yAxis = d3.svg.axis()
+                .scale(y)
+                .orient("left")
+                .ticks(10);
+
+            var StateSVG = d3.select("#StatesChart").append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+              .append("g")
+                .attr("transform",
+                      "translate(" + margin.left + "," + margin.top + ")");
+
+            var StateHeader = statedata[0];
+            var StateStats = [];
+            for (var j = 1; j < statedata.length; j++) {
+                StateStats.push(statedata[j]);
+            }
+
+            x.domain(StateStats.map(function (d) { return d[0]; }));
+
+            y.domain([0, d3.max(StateStats, function (d) { return parseFloat(d[1]); })]);
+
+
+            StateSVG.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(xAxis)
+                  .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("dx", "-.8em")
+                    .attr("dy", "-.55em")
+                    .style("font-size", "8px")
+                    .attr("transform", "rotate(-45)");
+
+            StateSVG.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis)
+                  .append("text")
+                    .attr("transform", "rotate(-45)")
+                    .attr("y", 6)
+                    .attr("dy", ".71em")
+                    .style("text-anchor", "end")
+                    .text("");
+
+
+
+            StateSVG.selectAll("bar")
+                    .data(StateStats)
+                  .enter().append("rect")
+                    .style("fill", "steelblue")
+                    .attr("x", function (d) { return x(d[0]); })
+                    .attr("width", x.rangeBand())
+                    .attr("y", function (d) { return y(parseFloat(d[1])); })
+                    .attr("height", function (d) { return height - y(parseFloat(d[1])); });
+
+            statebars = StateSVG;
+
+            //d3.csv("bar-data.csv", function (error, data) {
+
+
+            //});
+        }
+        function ChartCounties(Countydata) {
+            $("#CountiesChart").empty();
+            console.log(Countydata);
+            console.log($("#CountiesChart").width());
+
+            var margin = { top: 15, right: 15, bottom: 100, left: 100 },
+                width = $("#CountiesChart").width() - margin.left - margin.right,
+                height = $("#CountiesChart").height() - margin.top - margin.bottom;
+
+            // Parse the date / time
+
+
+            var x = d3.scale.ordinal().rangeRoundBands([0, width], .05);
+
+            var y = d3.scale.linear().range([height, 0]);
+
+            var xAxis = d3.svg.axis()
+                .scale(x)
+                .orient("bottom");
+
+            var yAxis = d3.svg.axis()
+                .scale(y)
+                .orient("left")
+                .ticks(10);
+
+            var StateSVG = d3.select("#CountiesChart").append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+              .append("g")
+                .attr("transform",
+                      "translate(" + margin.left + "," + margin.top + ")");
+
+            var CountiesHeader = Countydata[0];
+            var CountiesStats = [];
+            for (var j = 1; j < Countydata.length; j++) {
+                CountiesStats.push(Countydata[j]);
+            }
+
+            x.domain(CountiesStats.map(function (d) { return d[0]; }));
+
+            y.domain([0, d3.max(CountiesStats, function (d) { return parseFloat(d[1]); })]);
+
+
+            StateSVG.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(xAxis)
+                  .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("dx", "-.8em")
+                    .attr("dy", "-.55em")
+                .style("font-size", "8px")
+                    .attr("transform", "rotate(-45)");
+
+            StateSVG.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis)
+                  .append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 6)
+                    .attr("dy", ".71em")
+                    .style("text-anchor", "end")
+                    .text("Value ($)");
+
+            StateSVG.selectAll("bar")
+                    .data(CountiesStats)
+                  .enter().append("rect")
+                    .style("fill", "steelblue")
+                    .attr("x", function (d) { return x(d[0]); })
+                    .attr("width", x.rangeBand())
+                    .attr("y", function (d) { return y(parseInt(d[1])); })
+                    .attr("height", function (d) { return height - y(parseFloat(d[1])); });
+
+
+            countybars = StateSVG;
+            //d3.csv("bar-data.csv", function (error, data) {
+
+
+            //});
+        }
+    </script>
+
+</body>
