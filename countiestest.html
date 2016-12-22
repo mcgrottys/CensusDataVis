@@ -155,8 +155,8 @@
                     StateCensusURL = "";
                 }
                 else {
-                    CountyCensusURL = "http://api.census.gov/data/2013/acs3/profile?get=NAME," + VarCode + "&for=county:*&key=8d15539ba9df2fee70731737ab6ca7b02436b4fa";
-                    StateCensusURL = "http://api.census.gov/data/2013/acs3/profile?get=NAME," + VarCode + "&for=state:*&key=8d15539ba9df2fee70731737ab6ca7b02436b4fa";
+                    CountyCensusURL = "https://api.census.gov/data/2013/acs3/profile?get=NAME," + VarCode + "&for=county:*&key=8d15539ba9df2fee70731737ab6ca7b02436b4fa";
+                    StateCensusURL = "https://api.census.gov/data/2013/acs3/profile?get=NAME," + VarCode + "&for=state:*&key=8d15539ba9df2fee70731737ab6ca7b02436b4fa";
                 }
                 $.get(CountyCensusURL, function (CountiesCensus) {
                     $.get(StateCensusURL, function (StateCensus) {
